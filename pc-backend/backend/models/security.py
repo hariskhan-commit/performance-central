@@ -1,7 +1,8 @@
 import json
 from datetime import datetime
 from sqlalchemy import Column, Boolean, DateTime, String, ForeignKey, func
-from sqlalchemy.dialects.postgresql import UUID, ARRAY, LargeBinary
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
+from sqlalchemy import LargeBinary, Integer
 from . import Base
 from .core import AsyncAttrs
 
