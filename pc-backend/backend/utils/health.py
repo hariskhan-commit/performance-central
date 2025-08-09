@@ -1,29 +1,39 @@
-from datetime import datetime, timedelta
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
-from backend.models.core import BusinessManagerConfig
+from datetime import datetime, timezone
+from typing import Optional, Dict, Any
 
-async def compute_health_status(session: AsyncSession):
-    stale_threshold = datetime.utcnow() - timedelta(hours=24)
-    count_total = (await session.execute(select(func.count(BusinessManagerConfig.id)))).scalar()
-    count_stale = (await session.execute(select(func.count(BusinessManagerConfig.id)).where(
-        BusinessManagerConfig.last_successful_fetch_meta_at < stale_threshold
-    ))).scalar()
-    pct_stale = (count_stale / count_total) * 100 if count_total else 0
-    if pct_stale < 5:
-        return "Green"
-    if pct_stale < 15:
-        return "Amber"
-    return "Red"
+def calculate_fetch_health(
+    meta_fetch_time: Optional[datetime],
+    shopify_fetch_time: Optional[datetime]
+) -> Dict[str, Any]:
+    """
+    Calculates the fetch health status based on the age of the last successful fetches.
+    Returns a dictionary with ages in hours and a composite health status.
+    """
+    now = datetime.now(timezone.utc)
+    
+    # Normalize naive datetimes to UTC
+    if meta_fetch_time and meta_fetch_time.tzinfo is None:
+        meta_fetch_time = meta_fetch_time.replace(tzinfo=timezone.utc)
+    if shopify_fetch_time and shopify_fetch_time.tzinfo is None:
+        shopify_fetch_time = shopify_fetch_time.replace(tzinfo=timezone.utc)
 
-async def compute_freshness_score(session: AsyncSession):
-    try:
-        now = datetime.utcnow()
-        stmt = select(func.percentile_cont(0.9).within_group(now - func.coalesce(BusinessManagerConfig.last_successful_fetch_meta_at, now)))
-        if session.bind.dialect.name == 'postgresql':
-            p90 = (await session.execute(stmt)).scalar()
-            return int(100 - (p90.total_seconds() / 3600 / 24))
-        else:
-            return 0  # No percentile_cont in MySQL
-    except:
-        return 0
+    age_meta_hours = (now - meta_fetch_time).total_seconds() / 3600 if meta_fetch_time else float('inf')
+    age_shopify_hours = (now - shopify_fetch_time).total_seconds() / 3600 if shopify_fetch_time else float('inf')
+
+    # Determine status based on older of the two data sources
+    max_age = max(age_meta_hours, age_shopify_hours)
+
+    if max_age >= 6 or max_age == float('inf'):
+        status = "red"
+    elif max_age >= 2:
+        status = "amber"
+    else:
+        status = "green"
+
+    return {
+        "last_successful_fetch_meta_at": meta_fetch_time,
+        "last_successful_fetch_shopify_at": shopify_fetch_time,
+        "age_meta_hours": round(age_meta_hours, 2) if meta_fetch_time else None,
+        "age_shopify_hours": round(age_shopify_hours, 2) if shopify_fetch_time else None,
+        "fetch_health_status": status,
+    }
