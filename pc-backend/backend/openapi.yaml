@@ -1,0 +1,375 @@
+openapi: 3.0.3
+info:
+  title: v25 "PC" Backend API
+  description: |
+    The definitive API reference for the v25 Performance & Conversion Backend, with integrated API key management and MFA.
+  version: "25.1.0"
+
+servers:
+  - url: /api/v1
+    description: API Root
+
+paths:
+  /auth/login:
+    post:
+      summary: User Login
+      description: Authenticates a user and returns a JWT access token. If MFA is enabled, returns a temp token for second step.
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginPayload'
+      responses:
+        '200':
+          description: Authentication successful or MFA required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials.
+
+  /auth/mfa/verify:
+    post:
+      summary: Verify MFA Code
+      description: Verifies TOTP code and issues full JWT if valid.
+      tags: [Authentication]
+      security:
+        - bearerAuth: []  # Temp token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+      responses:
+        '200':
+          description: MFA verified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: MFA not required or invalid code.
+
+  /security/totp/enroll:
+    post:
+      summary: Enroll TOTP MFA
+      description: Generates TOTP secret and returns otpauth URI for QR scan.
+      tags: [Security]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Enrollment started.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  otpauth_uri:
+                    type: string
+
+  /security/totp/verify:
+    post:
+      summary: Verify TOTP Enrollment
+      description: Verifies first TOTP code to activate MFA.
+      tags: [Security]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+      responses:
+        '200':
+          description: MFA enabled.
+        '400':
+          description: Invalid code.
+
+  /security/passkeys/register/challenge:
+    get:
+      summary: Get Passkey Registration Challenge
+      description: Starts WebAuthn registration flow.
+      tags: [Security]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Challenge options.
+          content:
+            application/json:
+              schema:
+                type: object  # PublicKeyCredentialCreationOptions
+
+  /security/passkeys/register/verify:
+    post:
+      summary: Verify Passkey Registration
+      description: Verifies attestation and stores credential.
+      tags: [Security]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object  # Attestation response
+      responses:
+        '200':
+          description: Passkey registered.
+
+  /security/passkeys/auth/challenge:
+    get:
+      summary: Get Passkey Authentication Challenge
+      description: Starts WebAuthn authentication flow.
+      tags: [Security]
+      parameters:
+        - in: query
+          name: email
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Challenge options.
+          content:
+            application/json:
+              schema:
+                type: object  # PublicKeyCredentialRequestOptions
+
+  /security/passkeys/auth/verify:
+    post:
+      summary: Verify Passkey Authentication
+      description: Verifies assertion and issues JWT with mfa=true.
+      tags: [Security]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+                assertion:
+                  type: object
+      responses:
+        '200':
+          description: Authentication successful.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+
+  /admin/api_keys:
+    get:
+      summary: List API Keys
+      description: Lists and filters API keys (status, owner, bm_id). MFA required.
+      tags: [Administration]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, revoked]
+        - in: query
+          name: owner
+          schema:
+            type: integer
+        - in: query
+          name: bm_id
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of keys.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    key_id:
+                      type: string
+                    scopes:
+                      type: array
+                      items:
+                        type: string
+                    expires_at:
+                      type: string
+                      format: date-time
+                    revoked:
+                      type: boolean
+    post:
+      summary: Create API Key
+      description: Creates a new scoped API key. Returns full key once. MFA required.
+      tags: [Administration]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scopes:
+                  type: array
+                  items:
+                    type: string
+                ttl_days:
+                  type: integer
+                  default: 90
+                bm_id:
+                  type: integer
+      responses:
+        '201':
+          description: Key created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key:
+                    type: string
+
+  /admin/api_keys/{key_id}/rotate:
+    post:
+      summary: Rotate API Key
+      description: Revokes old key and issues new one with same scopes. Grace period applies. MFA required.
+      tags: [Administration]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: key_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: New key issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key:
+                    type: string
+
+  /admin/api_keys/{key_id}:
+    delete:
+      summary: Revoke API Key
+      description: Immediately revokes the key. MFA required.
+      tags: [Administration]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: key_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Key revoked.
+
+components:
+  schemas:
+    LoginPayload:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required: [email, password]
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        request_id:
+          type: string
+    FXDailyRate:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        date:
+          type: string
+          format: date
+        from_currency:
+          type: string
+          maxLength: 3
+        to_currency:
+          type: string
+          maxLength: 3
+        rate:
+          type: string
+          format: decimal
+        source:
+          type: string
+          readOnly: true
+    FXDailyRatePayload:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        from_currency:
+          type: string
+          maxLength: 3
+        to_currency:
+          type: string
+          maxLength: 3
+        rate:
+          type: string
+          format: decimal
+      required: [date, from_currency, to_currency, rate]
+    IngestionPayload:
+      type: object
+      properties:
+        bm_id:
+          type: integer
+        date:
+          type: string
+          format: date
+        data_type:
+          type: string
+          enum: [meta, shopify_child]
+        payload:
+          type: object
+      required: [bm_id, date, data_type, payload]
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-Api-Key

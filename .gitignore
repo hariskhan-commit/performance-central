@@ -1,0 +1,96 @@
+# --- OS & editors ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Packaging / build
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+*.manifest
+*.spec
+
+# Logs & profiles
+logs/
+*.log
+.pyinstrument/
+*.prof
+
+# Databases & data
+*.db
+*.sqlite
+*.sqlite3
+db.sqlite3
+
+# Coverage & test artifacts
+.coverage
+.coverage.*
+.cache/
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.hypothesis/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# Type checker / linters
+.mypy_cache/
+.ruff_cache/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Local env files (keep the example)
+.env
+.env.*
+!.env.example
+backend/.env
+!backend/.env.example
+
+# Docker Compose overrides (local only)
+docker-compose.override.yml
+backend/docker-compose.override.yml
+
+# Generated artifacts
+*.xlsx
+*.csv
+*.tsv
+
+# Local media/static (if used)
+backend/media/
+backend/staticfiles/
+
+# Node / frontend (if ever added)
+node_modules/

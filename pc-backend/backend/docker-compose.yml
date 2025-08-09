@@ -1,0 +1,103 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_DEBUG=0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/performance
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - INGESTION_TOKEN=${INGESTION_TOKEN}
+      - LEGACY_API_KEY=${LEGACY_API_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - FX_API_URL=${FX_API_URL}
+      - ENABLE_API_KEYS=true
+      - ENABLE_MFA=true
+      - RUN_MIGRATIONS_ON_BOOT=false  # Gated for prod
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/v1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=performance
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  celery:
+    build: .
+    command: celery -A backend.tasks worker --loglevel=info -P solo  # For async tasks
+    environment:
+      - FLASK_DEBUG=0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/performance
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - app
+    healthcheck:
+      test: ["CMD", "celery", "-A", "backend.tasks", "inspect", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  celery-beat:
+    build: .
+    command: celery -A backend.tasks beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    environment:
+      - FLASK_DEBUG=0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/performance
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - app
+    healthcheck:
+      test: ["CMD", "celery", "-A", "backend.tasks", "inspect", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  flower:
+    image: mher/flower
+    command: celery -A backend.tasks flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - celery
+
+volumes:
+  postgres_data:
